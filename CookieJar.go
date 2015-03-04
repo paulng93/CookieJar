@@ -12,6 +12,8 @@ import "log"
 import "sync"
 import "os/exec"
 import "strings"
+import "AuthClient"
+
 //main structure contains a mutex lock for concurrent programming and a map to keep 
 //track of cookies 
 type CookieJar struct {
@@ -25,6 +27,7 @@ type CookieJar struct {
  * returns Cookie jar object
  */
 func NewCookieJar() *CookieJar {
+    //return &CookieJar{m: make(map[string]string)}
     return &CookieJar{m: make(map[string]string)}
 }
 
@@ -32,9 +35,9 @@ func NewCookieJar() *CookieJar {
 /**
  * CreateCookie creates and sets the cookie 
  * Parameter Responsewriter and http.Request
- * returns the UUID as a string
+ * After Creating the Cookie, we add cookie to internal map storage of cookie
  */
-func CreateCookie(w http.ResponseWriter, name string) string {
+func (c *CookieJar) CreateCookie(w http.ResponseWriter, name string) {
 	value := getUniqueValue() // generate UUID
 	tempValue := string(value[:]) // turn into string
 	//creating cookie
@@ -44,27 +47,30 @@ func CreateCookie(w http.ResponseWriter, name string) string {
 		Path: "/",
 	}
 	http.SetCookie(w,cookie)
-	return tempValue
-}
-//--------------------------------------------------------------------------------------
-/**
- * AddCookie function adds a cookie to internally stored map
- * Parameter Responsewriter and http.Request
- * 
- */
-func (c *CookieJar) AddCookie(UUID string, name string){
+	AuthClient.Set(strings.Trim(tempValue, "\n"), name, w)
+	
+	
 	c.Lock.RLock()
-	c.m[strings.Trim(UUID, "\n")] = name
+	c.m[strings.Trim(tempValue, "\n")] = name
 	c.Lock.RUnlock()
+	
 }
+
 //--------------------------------------------------------------------------------------
 /**
  * GetValue servers as a getter to grab info from map
  * Parameter value to be taken
  * returns 2 objects, the name and a boolean value if value exist
  */
-func (c *CookieJar) GetValue(value string) (string, bool) {
-	name, check := c.m[value]
+func (c *CookieJar) GetValue(value string, w http.ResponseWriter) (string, bool) {
+	_, check := c.m[value]
+	//check := false
+	name := AuthClient.Get(value, w)
+	/*
+	if name != "" {
+		check = true
+	}
+	*/
 	return name, check
 
 }
@@ -73,7 +79,7 @@ func (c *CookieJar) GetValue(value string) (string, bool) {
  * DeleteCookie deletes cookie from map 
  * Parameter the value to be deleted 
  */
-func (c *CookieJar) DeleteCookie(value string){
+func (c *CookieJar) DeleteCookie(w http.ResponseWriter, value string){
 	//cookie, _ := req.Cookie("UUID")
 	_, ok := c.m[value]
 	if ok {
@@ -81,6 +87,12 @@ func (c *CookieJar) DeleteCookie(value string){
 		delete(c.m, value)
 		c.Lock.RUnlock()
 	}
+	cookie := &http.Cookie{
+		Name: "",
+		Value: "",
+		Path: "/",
+	}
+	http.SetCookie(w,cookie)
 	
 }
 //--------------------------------------------------------------------------------------
@@ -95,5 +107,10 @@ func getUniqueValue() []byte{
 		log.Fatal(error)
 	}
 	return out
+}
+
+func (c *CookieJar) GetCookie(req *http.Request, ID string) *http.Cookie {
+	cookie, _ := req.Cookie("UUID")
+	return cookie
 }
 
